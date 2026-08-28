@@ -1,0 +1,8 @@
+IDAX Core Runtime
+Copyright 2026 iDynamicsAX contributors
+
+The SQL migrations and helper scripts in this repository are licensed under
+Apache License 2.0.
+
+The separately distributed es.idynamicsax.idax:idax-core binary is proprietary
+software and is not licensed under Apache License 2.0.
