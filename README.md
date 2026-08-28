@@ -22,17 +22,25 @@ but it does **not** contain the proprietary `idax-core` Java source.
 
 ## Binary dependency
 
-Applications resolve the following separately licensed binary:
+Applications resolve the following separately licensed binary from the public,
+anonymous Maven repository:
 
 ```text
 es.idynamicsax.idax:idax-core:0.1.0
 ```
 
-The Core JAR is not covered by this repository's Apache License 2.0. Its binary
-distribution terms must be accepted separately. Do not mirror or redistribute
-the JAR unless those terms allow it.
+```xml
+<repository>
+  <id>idax-public</id>
+  <url>https://toni-soler.github.io/idax-core-runtime/maven2</url>
+</repository>
+```
 
-Given an authorized JAR downloaded outside Git, install it locally with:
+The Core JAR is not covered by this repository's Apache License 2.0. Downloading
+or using it is subject to the [IDAX Core Runtime Binary License 1.0](IDAX_CORE_BINARY_LICENSE.md).
+
+Maven consumers normally do not need a manual install. For offline use, install
+an authorized downloaded JAR locally with:
 
 ```powershell
 .\scripts\install-core.ps1 -JarPath C:\downloads\idax-core-0.1.0.jar
