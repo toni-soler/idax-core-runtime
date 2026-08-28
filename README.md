@@ -6,8 +6,8 @@ but it does **not** contain the proprietary `idax-core` Java source.
 
 ## Included
 
-- the minimal `idax_core` PostgreSQL migrations required by IDAX Ledger and
-  osTRIS;
+- the complete `idax_core` PostgreSQL runtime migration chain required by IDAX
+  modules, including Ledger and osTRIS;
 - scripts for installing an authorized Core JAR in a local Maven repository;
 - the public Maven coordinates and compatibility contract;
 - provider-neutral database configuration examples.
@@ -66,9 +66,10 @@ docker run --rm --network host \
   migrate
 ```
 
-The selected migrations provide tenant/RLS primitives, users, audit events,
-granular permissions, base roles and service-principal grants. AX legacy,
-reverse-sync, messaging and AI-development schemas are intentionally absent.
+The migrations provide tenant/RLS primitives, users, audit events, permissions,
+messaging, service principals and the other persistence contracts referenced by
+the Core runtime JAR. Dynamics AX legacy schemas and application-specific
+schemas remain absent.
 
 ## Compatibility
 
