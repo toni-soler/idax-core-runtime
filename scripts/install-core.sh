@@ -2,7 +2,7 @@
 set -eu
 
 jar_path="${1:?usage: install-core.sh PATH_TO_JAR [VERSION]}"
-version="${2:-0.1.0}"
+version="${2:-0.2.0}"
 
 test -f "$jar_path"
 mvn install:install-file \

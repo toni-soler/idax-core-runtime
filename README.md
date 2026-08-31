@@ -26,7 +26,7 @@ Applications resolve the following separately licensed binary from the public,
 anonymous Maven repository:
 
 ```text
-es.idynamicsax.idax:idax-core:0.1.0
+es.idynamicsax.idax:idax-core:0.2.0
 ```
 
 ```xml
@@ -43,11 +43,11 @@ Maven consumers normally do not need a manual install. For offline use, install
 an authorized downloaded JAR locally with:
 
 ```powershell
-.\scripts\install-core.ps1 -JarPath C:\downloads\idax-core-0.1.0.jar
+.\scripts\install-core.ps1 -JarPath C:\downloads\idax-core-0.2.0.jar
 ```
 
 ```shell
-./scripts/install-core.sh /downloads/idax-core-0.1.0.jar
+./scripts/install-core.sh /downloads/idax-core-0.2.0.jar
 ```
 
 ## Database bootstrap
