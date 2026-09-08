@@ -1,0 +1,46 @@
+-- V79: DB-C2A.6a - correct the EXECUTE grantee for
+-- idax_core.service_principal_set_enabled(uuid,boolean) (V78) from idax_admin (relied upon only
+-- via idax_backend's incidental automatic inheritance) to idax_backend directly (the actual,
+-- genuine, pre-tenant execution role for this capability's sole call site).
+--
+-- See DATABASE_PRIVILEGED_CAPABILITIES.md section 29l (updated by this gate) for the full trace.
+--
+-- BACKGROUND: V78 granted EXECUTE to idax_admin, reasoning that idax_backend would reach the
+-- function via its standing INHERIT membership in idax_admin (V1). That reasoning was factually
+-- correct (idax_backend does inherit it, proven by V78's own tests) but violates this program's
+-- permanent grantee rule established at this gate: capabilities must be granted directly to the
+-- minimum REAL execution role for a legitimate caller, never merely to a role that caller happens
+-- to inherit from. Relying on inheritance here means this capability would silently break if
+-- DB-C1B (or any future cleanup) ever removes idax_backend's broad standing membership in
+-- idax_admin - a membership that exists for entirely unrelated historical reasons, not because
+-- this capability's real caller is administrative.
+--
+-- RE-CONFIRMED CALLER (not assumed): ServicePrincipalAdminController#enabled
+-- (POST /api/admin/service-principals/{id}/enabled/{enabled}, superuser-only, no "tenants" path
+-- segment, not on JwtAuthFilter's X-Tenant-header allowlist) -> ServicePrincipalManagementService
+-- #setEnabled -> ServicePrincipalSetEnabledJdbcRepository - confirmed via a fresh full source
+-- search to be the function's ONLY call site. TenantContext is never established for this path
+-- (reconfirmed), so the connection is genuinely, exclusively bare idax_backend - a pre-tenant-only
+-- caller in this program's grantee taxonomy, matching "pre-tenant-only caller -> idax_backend
+-- DIRECT" exactly. No genuine idax_admin execution path exists for this function - re-verified by
+-- source search this gate, not assumed from DB-C2A.6's own prior conclusion.
+--
+-- CORRECTION: REVOKE the transitional idax_admin grant, GRANT EXECUTE directly to idax_backend.
+-- Nothing else changes - no table grant, no owner grant, no role membership, no function body.
+-- V78 itself is untouched (Flyway migrations are immutable; this is a new, additive migration).
+--
+-- POST-CORRECTION DIRECT/EFFECTIVE STATE: idax_backend - DIRECT EXECUTE (new). idax_admin - NO
+-- EXECUTE at all, direct or effective (idax_admin is not a member of idax_backend - membership
+-- runs the other way - so it gains nothing from idax_backend's own new direct grant). idax_app -
+-- unchanged, still no EXECUTE (V78's own exclusion, preserved). PUBLIC - unchanged, still denied.
+--
+-- DB-C1B RELATIONSHIP: this capability now has NO DB-C1B execute-grant dependency - it does not
+-- rely on idax_backend's broad standing membership in idax_admin at all anymore, and would
+-- continue to work correctly even if that legacy membership edge were removed entirely (proven by
+-- this gate's own disposable-fixture test that temporarily revokes it). This is distinct from
+-- saying the legacy idax_backend->idax_admin membership itself has no DB-C1B debt - it still does,
+-- for the OTHER capabilities/paths that still rely on it (see the existing DB-C1B cleanup
+-- checklist in section 29) - this migration does not touch or resolve that broader debt.
+
+REVOKE EXECUTE ON FUNCTION idax_core.service_principal_set_enabled(uuid, boolean) FROM idax_admin;
+GRANT EXECUTE ON FUNCTION idax_core.service_principal_set_enabled(uuid, boolean) TO idax_backend;

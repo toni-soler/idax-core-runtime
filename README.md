@@ -26,7 +26,7 @@ Applications resolve the following separately licensed binary from the public,
 anonymous Maven repository:
 
 ```text
-es.idynamicsax.idax:idax-core:0.2.0
+es.idynamicsax.idax:idax-core:0.3.0
 ```
 
 ```xml
@@ -43,11 +43,11 @@ Maven consumers normally do not need a manual install. For offline use, install
 an authorized downloaded JAR locally with:
 
 ```powershell
-.\scripts\install-core.ps1 -JarPath C:\downloads\idax-core-0.2.0.jar
+.\scripts\install-core.ps1 -JarPath C:\downloads\idax-core-0.3.0.jar
 ```
 
 ```shell
-./scripts/install-core.sh /downloads/idax-core-0.2.0.jar
+./scripts/install-core.sh /downloads/idax-core-0.3.0.jar
 ```
 
 ## Database bootstrap
@@ -76,6 +76,8 @@ schemas remain absent.
 | Runtime | Java | Spring Boot | PostgreSQL | Ledger | osTRIS |
 | --- | --- | --- | --- | --- | --- |
 | 0.1.x | 21 | 3.4.x | 17 | 0.1.x | 0.1.x |
+| 0.2.x | 21 | 3.4.x | 17 | 0.2.x | 0.2.x |
+| 0.3.x | 21 | 3.4.x | 17 | 0.2.x | 0.2.x |
 
 The repository is not an identity-provider application. Deployments must supply
 trusted JWT validation material and, when service-to-service calls are enabled,

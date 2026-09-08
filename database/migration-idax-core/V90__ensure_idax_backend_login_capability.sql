@@ -1,0 +1,21 @@
+-- DB-C2A.14c.1: deployment DB identity separation.
+--
+-- V1's bare `CREATE ROLE idax_backend;` (guarded by IF NOT EXISTS, since infrastructure is expected
+-- to have already created it) creates a role with PostgreSQL's default CREATE ROLE attributes -
+-- which do NOT include LOGIN. On a fresh installation that correctly gives the real PostgreSQL
+-- bootstrap superuser its OWN distinct name (never `idax_backend`), this branch runs for the first
+-- time and produces an idax_backend that cannot connect at all.
+--
+-- This single, universal, idempotent statement is safe for every installation shape found during
+-- discovery: a fresh install where this is idax_backend's first LOGIN grant; a legacy install where
+-- idax_backend already has LOGIN (harmless no-op, proven empirically); and a legacy install already
+-- remediated by the deployment-side identity-separation runbook (DATABASE_PRIVILEGED_CAPABILITIES.md,
+-- section 29-DB-C2A.14c.1), where the newly-created idax_backend already has LOGIN too.
+--
+-- Deliberately does NOT touch NOSUPERUSER/NOBYPASSRLS/ownership/password - those cannot be expressed
+-- as a single migration statement safe for both fresh and legacy-collision installations (a legacy
+-- idax_backend that is still the cluster's original bootstrap superuser cannot have SUPERUSER removed
+-- by any ALTER ROLE statement - proven empirically; PostgreSQL refuses with "the bootstrap superuser
+-- must have the SUPERUSER attribute"). That remediation is deployment/operator-sequence work, not
+-- migration work - see the runbook. No password is set or embedded here (never in a migration file).
+ALTER ROLE idax_backend LOGIN;

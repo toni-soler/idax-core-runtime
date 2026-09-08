@@ -2,7 +2,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$JarPath,
-    [string]$Version = "0.2.0",
+    [string]$Version = "0.3.0",
     [string]$RepositoryRoot = (Split-Path -Parent $PSScriptRoot)
 )
 

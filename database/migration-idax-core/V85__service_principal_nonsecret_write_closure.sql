@@ -1,0 +1,97 @@
+-- V85: DB-C2A.11a CLOSURE - revoke broad legacy runtime write access to the non-secret
+-- service-principal tables (service_principal, service_principal_grant)
+--
+-- This is the culmination of DB-C2A.6 through DB-C2A.11: every legitimate runtime WRITE to
+-- idax_core.service_principal and idax_core.service_principal_grant now goes through a narrow,
+-- idax_capability_owner-owned, SECURITY DEFINER function (service_principal_create /
+-- service_principal_set_enabled / service_principal_create_grant / service_principal_revoke_grant)
+-- - a full production-source re-inventory, re-run immediately before this migration was authored
+-- (see the DB-C2A.11a gate report), found ZERO remaining direct INSERT/UPDATE/DELETE consumers of
+-- either table anywhere in production code:
+--
+--   idax_core.service_principal: ServicePrincipalRepository is used ONLY via .findById(...)
+--   (4 call sites in ServicePrincipalManagementService - addCredential/revokeCredential/grant/
+--   revokeGrant - all read-only, for clientId audit enrichment and grant()'s existence check).
+--   NO .save()/.delete() call on this repository exists anywhere in production code - confirmed by
+--   direct source search, not inferred from repository injection.
+--
+--   idax_core.service_principal_grant: ServicePrincipalGrantRepository (field `grants` in
+--   ServicePrincipalManagementService) is injected but is now COMPLETELY UNUSED in that class -
+--   confirmed by direct source search (grant() and revokeGrant() both route entirely through
+--   their respective capabilities as of DB-C2A.10/.11, with no remaining reference to the `grants`
+--   field at all). The ONLY remaining direct consumer of this table anywhere in production is
+--   ServiceTokenIssuer's own read
+--   (grants.findByServicePrincipalIdAndTenantIdAndAudience(...), executed as idax_service_auth) -
+--   a SELECT, unaffected by this migration.
+--
+-- PRIOR READINESS INCONSISTENCY, RESOLVED: DB-C2A.10/.11 both classified service_principal_grant's
+-- INSERT/UPDATE as "BLOCKED" in their own final reports. This was NOT a finding that a genuine
+-- direct consumer remained - both gates explicitly scoped themselves to "do not revoke broad
+-- grants here" / "out of scope for broad-grant revocation in this gate", i.e. a deliberate scope
+-- limitation of those narrowly-focused capability-migration gates, not a factual blocker. This
+-- dedicated closure gate (DB-C2A.11a) re-confirms the underlying fact (zero direct consumers) and
+-- corrects the classification: both verbs were already consumer-free as of V84.
+--
+-- HISTORICAL GRANT SOURCE (traced from the immutable migration history, not assumed - and a real
+-- gap discovered empirically by this gate's own negative-proof tests, not merely read from the
+-- SQL text): V1 (idax_core_modern_multitenant_rls) sets SCHEMA-WIDE default privileges -
+-- `ALTER DEFAULT PRIVILEGES IN SCHEMA idax_core GRANT ALL ON TABLES TO idax_admin;` and
+-- `... GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO idax_app;` - which apply AUTOMATICALLY to
+-- any table created afterward by the same privileged identity. V51 (service_principal_
+-- authentication), when it created service_principal/service_principal_grant, therefore silently
+-- received these defaults BEFORE its own explicit statements ran: idax_admin got the full "ALL"
+-- set (SELECT/INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER) via the default alone, and V51's
+-- own explicit `GRANT SELECT, INSERT, UPDATE ... TO idax_admin` was therefore REDUNDANT for those
+-- three verbs and never touched DELETE/TRUNCATE/REFERENCES/TRIGGER at all - those four verbs
+-- survived, unnoticed, purely via the V1 default privilege, until this gate's own initial
+-- negative-proof test run caught idax_admin's live DELETE where none was expected from reading
+-- V51's GRANT statement alone. idax_app received its own default-privilege ALL-of-four
+-- (SELECT/INSERT/UPDATE/DELETE) at the same moment, but V51 immediately issued
+-- `REVOKE ALL ON idax_core.service_principal FROM idax_app;` (and the grant-table equivalent),
+-- which correctly undid the ENTIRE default grant including DELETE - idax_app therefore has zero
+-- write privilege on either table already, requiring no action here. idax_service_auth never
+-- received INSERT/UPDATE/DELETE on either table at all (V51 grants it SELECT only on both, and it
+-- receives no schema-wide default privilege rule of its own). idax_backend has NEVER held a direct
+-- grant of its own on either table - its write access has always been purely EFFECTIVE, via its
+-- standing INHERIT membership in idax_admin (V1: `GRANT idax_admin TO idax_backend`). No later
+-- migration (V54-V84) ever grants a runtime role anything further at the TABLE level on either
+-- table - every migration from V54 onward grants only EXECUTE on narrow capability functions, or
+-- column-level DATA privileges to idax_capability_owner specifically (never to a runtime role).
+--
+-- WHAT THIS MIGRATION DOES NOT TOUCH (explicitly out of scope for this gate):
+--   - SELECT on either table for any role - ServiceTokenIssuer's own read of service_principal_grant
+--     (as idax_service_auth) and ServicePrincipalManagementService's four .findById(...) reads of
+--     service_principal (as idax_backend/idax_admin depending on call site) remain fully
+--     functional; SELECT closure is a separate, unaddressed concern (recorded as remaining
+--     technical debt in the gate report, not fixed here).
+--   - idax_capability_owner's own accumulated data privileges (SELECT/INSERT/UPDATE on specific
+--     columns, granted across V78/V80/V81/V83/V84) - these remain exactly as they are; the
+--     capability functions still need them to do their own SECURITY DEFINER work.
+--   - EXECUTE on any service-principal capability function - runtime roles keep exactly the
+--     EXECUTE grants they already had.
+--   - idax_core.service_principal_credential and idax_core.service_principal_audit - inventoried
+--     only (see the gate report), explicitly excluded from this closure by task scope; their
+--     broad grants (idax_admin INSERT on credential; idax_service_auth INSERT on audit) remain
+--     untouched.
+--   - Row-Level Security on service_principal_grant - ENABLE/FORCE and the tenant-isolation policy
+--     are entirely unchanged; this migration is a table-ACL closure only, not an RLS change.
+--   - Any role membership, any capability owner reassignment, any business data, any other table.
+--
+-- IMPORTANT: this REVOKE removes DIRECT grants from idax_admin only. Because idax_backend's write
+-- access to these two tables has only ever been EFFECTIVE (via its standing membership in
+-- idax_admin, never a direct grant of its own), revoking idax_admin's own privilege automatically
+-- removes idax_backend's effective access too - no separate action is needed or possible for an
+-- inherited-only privilege. The explicit no-op REVOKEs on idax_backend below exist purely as
+-- defensive, self-documenting completeness (mirroring V1's and V67's own defensive style), proving
+-- the invariant rather than merely assuming it.
+
+-- Revokes the FULL non-SELECT verb set (not just INSERT/UPDATE) - idax_admin holds
+-- DELETE/TRUNCATE/REFERENCES/TRIGGER on both tables via V1's schema-wide default privilege ("ALL
+-- ON TABLES"), never explicitly revoked by V51. SELECT is deliberately preserved (see header).
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON idax_core.service_principal FROM idax_admin;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON idax_core.service_principal_grant FROM idax_admin;
+
+-- Defensive completeness only - idax_backend never held a direct grant on either table (see the
+-- historical trace above); these REVOKEs are no-ops that document and guarantee the invariant.
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON idax_core.service_principal FROM idax_backend;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON idax_core.service_principal_grant FROM idax_backend;

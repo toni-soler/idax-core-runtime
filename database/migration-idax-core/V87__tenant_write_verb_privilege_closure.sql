@@ -1,0 +1,114 @@
+-- V87: DB-C2A.12a-R2 CLOSURE - permanently revoke tenant-table runtime privileges now proven to
+-- have ZERO legitimate runtime consumers: INSERT, plus the non-business verbs TRUNCATE, REFERENCES
+-- and TRIGGER.
+--
+-- See DATABASE_PRIVILEGED_CAPABILITIES.md section 29v for the full trace and this gate's report.
+--
+-- HISTORY (audit trail, not rewritten): DB-C2A.12 (V86, section 29t) migrated
+-- TenantController/TenantService#create onto idax_core.tenant_create(text,text,text,boolean),
+-- granted DIRECT EXECUTE to idax_backend only. A first attempt at this closure (DB-C2A.12a)
+-- correctly STOPPED before revoking INSERT, because its own fresh, from-scratch consumer sweep
+-- (mandated by that gate, not reused from DB-C2A.12) found a second, live, previously-unexamined
+-- raw INSERT path: TenantOnboardingController (POST /api/admin/tenants) ->
+-- TenantOnboardingService#createOrBootstrapTenant() -> private createTenant(). DB-C2A.12b then
+-- migrated that residual path onto the SAME existing tenant_create capability (no new SQL, V86
+-- byte-unchanged) - the fix required reordering TenantOnboardingService's own tenant resolution to
+-- run BEFORE its "SET LOCAL ROLE idax_admin" elevation, because tenant_create's EXECUTE grant is
+-- direct to idax_backend only and SET ROLE fully replaces the privilege-checking identity (proven
+-- empirically with a throwaway PostgreSQL 17 container in that gate). This migration is the RERUN
+-- of the closure (DB-C2A.12a-R2), from that now-integrated baseline.
+--
+-- FRESH FINAL CONSUMER MATRIX (Phase 1, re-derived from scratch, not trusted from DB-C2A.12b):
+--   INSERT: TenantService#create and TenantOnboardingService#createTenant() both route through
+--     idax_core.tenant_create(...) exclusively - zero raw INSERT anywhere in production code.
+--     FirstAdministratorBootstrapService still contains a raw tenant INSERT, but a full source
+--     search (controllers, CommandLineRunner/ApplicationRunner, scheduled tasks) confirms it has NO
+--     production entry point anywhere - only its own dedicated unit test calls it. DORMANT, not a
+--     runtime consumer. It remains permanently SECURITY USE BLOCKED and is not activated, wired, or
+--     otherwise touched by this migration - its dormant code path may cease to function under an
+--     ordinary runtime credential once this migration applies, which is the intended, accepted
+--     outcome (a future dedicated secure-bootstrap gate is a separate concern).
+--   SELECT: multiple genuine consumers remain (TenantService's own findAll/findById/findByCodigo/
+--     isEnabled; ServicePrincipalManagementService and ServiceTokenIssuer's audit/tenant-context
+--     reads; LocalAuthService's MFA-gate check; MeService; IdaxMessagingService's group listings;
+--     RolePermissionService's export helper; TenantResolver's code lookup). NOT touched.
+--   UPDATE: TenantService#update's residual direct JPA save() for status/mfa_required (name is
+--     already capability-mediated since DB-C2A.5), and TenantService#updateEnabled's advisory path
+--     (fully capability-mediated since DB-C2A.4). A genuine remaining direct consumer. NOT touched.
+--   DELETE: TenantService#delete's direct tenantRepository.delete() - a genuine remaining direct
+--     consumer (out of scope, tracked separately as a future TENANT_DELETE/PURGE candidate).
+--     NOT touched.
+--
+-- CURRENT ACL / PROVENANCE (Phases 3-5, verified empirically via has_table_privilege and
+-- information_schema.role_table_grants against the real, fully-migrated V1-V86 schema, not
+-- inferred from migration text alone - re-confirming DB-C2A.12's own section-29t finding):
+--   idax_admin holds the full "ALL" verb set (SELECT/INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/
+--   TRIGGER) on idax_core.tenant DIRECTLY, from V1's EARLIER, IMMEDIATE
+--   `GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA idax_core TO idax_admin` (line ~724) - this
+--   applied instantly to every table that already existed at that point, including tenant (created
+--   earlier, line ~133). idax_app holds SELECT/INSERT/UPDATE/DELETE DIRECTLY (never
+--   TRUNCATE/REFERENCES/TRIGGER) from the analogous earlier blanket
+--   `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA idax_core TO idax_app`
+--   (line ~721). Both are IMMEDIATE-BLANKET-GRANT debt (mechanism A), distinct from DB-C2A.11a's
+--   own FUTURE-DEFAULT-PRIVILEGE debt (mechanism B, `ALTER DEFAULT PRIVILEGES`, lines ~728-735) -
+--   the two remain tracked separately in the one authoritative broad-privilege-debt register
+--   (DATABASE_PRIVILEGED_CAPABILITIES.md section 29s/29t/29v). The later, comment-labeled per-table
+--   statements at V1 lines ~741-742 are purely additive and change nothing (GRANT is never
+--   restrictive). idax_backend has never held a direct grant of its own on idax_core.tenant - its
+--   effective access has only ever come from its standing INHERIT memberships in idax_app and
+--   idax_admin (`GRANT idax_app TO idax_backend`, `GRANT idax_admin TO idax_backend`, both V1).
+--   Revoking idax_admin's and idax_app's own direct grants therefore automatically closes
+--   idax_backend's effective access too - no separate action is possible or needed for a purely
+--   inherited privilege. idax_service_auth holds a separate, legitimate, unrelated DIRECT SELECT
+--   grant on idax_core.tenant (V51 line 91, for ServiceTokenIssuer's own authentication-plane
+--   tenant-context reads) - nothing else, and untouched by this migration (SELECT is out of scope).
+--   PUBLIC holds nothing on idax_core.tenant at any point in the migration history (schema-level
+--   `REVOKE ALL ON SCHEMA idax_core FROM PUBLIC`, V1 line 61, plus no table-level grant to PUBLIC was
+--   ever issued) - not a relevant role for this closure.
+--
+-- WHAT THIS MIGRATION DOES NOT TOUCH (explicitly out of scope for this gate):
+--   - SELECT/UPDATE/DELETE on idax_core.tenant for any role - genuine remaining direct consumers
+--     exist (see the consumer matrix above); closing them is a separate, unaddressed concern.
+--   - idax_capability_owner's own accumulated column/table privileges (SELECT from V70, column
+--     UPDATE from V71/V77, column INSERT from V86) - these remain exactly as they are; the
+--     capability functions still need them.
+--   - EXECUTE on tenant_search_global/tenant_search_global_count/tenant_set_enabled/
+--     tenant_update_name/tenant_create - runtime roles keep exactly the EXECUTE grants they already
+--     had (idax_backend direct on tenant_create; idax_admin direct on tenant_search_global, per
+--     V70's own earlier, different choice).
+--   - ALTER DEFAULT PRIVILEGES of any kind (mechanism B is a separate, later, global DB-C security
+--     gate - this migration closes only the existing idax_core.tenant table).
+--   - Row-Level Security (idax_core.tenant has none, confirmed directly - it is the global tenant
+--     catalog itself), role membership, table ownership, business data, V86, or any other table.
+--
+-- IMPORTANT: this REVOKE removes DIRECT grants from idax_admin and idax_app only. Because
+-- idax_backend's access to these verbs has only ever been EFFECTIVE (via its standing memberships,
+-- never a direct grant of its own), revoking the two source roles' own privileges automatically
+-- removes idax_backend's effective access too. The explicit no-op REVOKEs on idax_backend below
+-- exist purely as defensive, self-documenting completeness (mirroring V67's and V85's own style),
+-- proving the invariant rather than merely assuming it. The no-op REVOKE of TRUNCATE/REFERENCES/
+-- TRIGGER on idax_app is the same kind of defensive completeness - idax_app's own blanket grant
+-- never included these three verbs, but stating so explicitly removes any doubt for a future reader.
+
+-- SUBSTANTIVE: idax_admin and idax_app are the actual, empirically-confirmed direct holders of
+-- tenant INSERT (both via V1's own earlier, immediate blanket grants - see the provenance trace
+-- above). Both idax_admin's and idax_app's own zero-remaining-consumer status was reconfirmed fresh
+-- this gate.
+REVOKE INSERT ON idax_core.tenant FROM idax_admin;
+REVOKE INSERT ON idax_core.tenant FROM idax_app;
+
+-- SUBSTANTIVE: idax_admin is the sole direct holder of these three non-business, schema-maintenance
+-- verbs on idax_core.tenant (via the same blanket grant). No runtime production code anywhere
+-- issues TRUNCATE, creates/alters a trigger, or creates a foreign key referencing idax_core.tenant -
+-- all such operations are migration/install-time DDL, executed under a separate, elevated
+-- credential, never idax_admin.
+REVOKE TRUNCATE, REFERENCES, TRIGGER ON idax_core.tenant FROM idax_admin;
+
+-- DEFENSIVE NO-OP: idax_app never held TRUNCATE/REFERENCES/TRIGGER directly on idax_core.tenant
+-- (confirmed empirically) - stated explicitly for completeness, not because it changes anything.
+REVOKE TRUNCATE, REFERENCES, TRIGGER ON idax_core.tenant FROM idax_app;
+
+-- DEFENSIVE NO-OP: idax_backend never held a direct grant of its own on idax_core.tenant for any of
+-- these four verbs (see the historical trace above); these REVOKEs are no-ops that document and
+-- guarantee the invariant.
+REVOKE INSERT, TRUNCATE, REFERENCES, TRIGGER ON idax_core.tenant FROM idax_backend;
