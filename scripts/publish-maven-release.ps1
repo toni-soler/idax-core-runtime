@@ -24,6 +24,13 @@ try {
     Copy-Item -LiteralPath $resolvedJar -Destination (Join-Path $artifactPath $jarName)
     Copy-Item -LiteralPath $expectedPom -Destination (Join-Path $artifactPath $pomName)
 
+    # Maven checksums must describe the bytes stored by Git. Normalize the POM
+    # before hashing so Windows autocrlf cannot leave stale CRLF checksums for
+    # the LF blob published from gh-pages.
+    $stagedPom = Join-Path $artifactPath $pomName
+    $pomText = [System.IO.File]::ReadAllText($stagedPom).Replace("`r`n", "`n")
+    [System.IO.File]::WriteAllText($stagedPom, $pomText, [System.Text.UTF8Encoding]::new($false))
+
     foreach ($name in @($jarName, $pomName)) {
         $file = Join-Path $artifactPath $name
         $sha1 = (Get-FileHash -LiteralPath $file -Algorithm SHA1).Hash.ToLowerInvariant()
