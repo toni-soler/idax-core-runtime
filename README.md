@@ -77,7 +77,7 @@ schemas remain absent.
 | --- | --- | --- | --- | --- | --- |
 | 0.1.x | 21 | 3.4.x | 17 | 0.1.x | 0.1.x |
 | 0.2.x | 21 | 3.4.x | 17 | 0.2.x | 0.2.x |
-| 0.3.x | 21 | 3.4.x | 17 | 0.2.x | 0.2.x |
+| 0.3.x | 21 | 3.4.x | 17 | 0.3.x | 0.3.x |
 
 The repository is not an identity-provider application. Deployments must supply
 trusted JWT validation material and, when service-to-service calls are enabled,
