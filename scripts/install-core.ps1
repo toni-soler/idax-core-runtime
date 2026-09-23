@@ -2,7 +2,7 @@
 param(
     [Parameter(Mandatory)]
     [string]$JarPath,
-    [string]$Version = "0.3.0"
+    [string]$Version = "0.4.0"
 )
 
 Set-StrictMode -Version Latest
