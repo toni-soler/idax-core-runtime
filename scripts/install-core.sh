@@ -2,7 +2,7 @@
 set -eu
 
 jar_path="${1:?usage: install-core.sh PATH_TO_JAR [VERSION]}"
-version="${2:-0.4.0}"
+version="${2:-0.5.0}"
 
 test -f "$jar_path"
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
